@@ -19,6 +19,7 @@ import { useDebounceFn, useScroll } from "@vueuse/core";
 const sessionId = ref<string>("");
 const columns = ref<string[]>([]);
 const facets = ref<any>([]);
+const sortingState = ref<any[]>([]);
 const searchQuery = ref<string>("");
 const tableScrollContainer = ref<HTMLDivElement | null>(null);
 const scrollState = useScroll(tableScrollContainer);
@@ -45,10 +46,6 @@ const generateColumns = () => {
 const datatableColumns = computed(() => {
   if (columns.value.length === 0) {
     return [
-      {
-        accessorFn: (row: any, index) => index,
-        header: "#",
-      },
       {
         accessorKey: "message",
         header: "Message",
@@ -136,8 +133,13 @@ watch(
   }, 100)
 );
 
+const updateSorting = async (sorting: []) => {
+  sortingState.value = sorting;
+
+  fetchVirtualPage();
+};
+
 const fetchVirtualPage = async () => {
-  console.log("fetching...");
   if (!sessionId.value || !tableScrollContainer.value) {
     return;
   }
@@ -154,6 +156,7 @@ const fetchVirtualPage = async () => {
       searchQuery: searchQuery.value,
       offset,
       limit,
+      sorting: sortingState.value,
     }
   );
 
@@ -230,23 +233,29 @@ onMounted(async () => {
         </div>
         <ul class="border rounded-lg">
           <li
-            v-for="value in facet.values"
+            v-for="value in facet.values.sort((a, b) => b.total - a.total)"
             :key="value.value"
-            class="flex items-center space-x-2 p-3 border-b last:border-b-0"
+            class="flex items-center justify-between p-3 border-b last:border-b-0"
             :title="value.value"
           >
-            <Checkbox
-              class="border-secondary"
-              :checked="value.filtered"
-              @update:checked="
-                setFilteredForFacetValue(
-                  facet.property,
-                  value.value,
-                  !value.filtered
-                )
-              "
-            />
-            <span class="text-xs truncate">{{ value.value }}</span>
+            <label
+              :for="`facet-${facet.property}-${value.value}`"
+              class="flex truncate space-x-2 cursor-pointer"
+            >
+              <Checkbox
+                :id="`facet-${facet.property}-${value.value}`"
+                class="border-secondary"
+                :checked="value.filtered"
+                @update:checked="
+                  setFilteredForFacetValue(
+                    facet.property,
+                    value.value,
+                    !value.filtered
+                  )
+                "
+              />
+              <span class="text-xs truncate">{{ value.value }}</span>
+            </label>
             <span class="bg-secondary text-foreground rounded-full px-2">{{
               value.total
             }}</span>
@@ -279,6 +288,7 @@ onMounted(async () => {
           :data-length="dataLength"
           :estimated-row-height="31"
           :scroll-offset="tableScrollContainer?.scrollTop || 0"
+          @sorting-change="updateSorting"
           sticky-headers
         />
       </div>

@@ -41,6 +41,12 @@ pub mod structured_logging {
         total: u32,
     }
 
+    #[derive(Clone, Debug, serde::Deserialize)]
+    pub struct SortingState { 
+        id: String,
+        desc: bool
+    }
+
     #[tauri::command]
     pub async fn start_structured_logging_session(initial_data: Vec<String>) -> String {
         // generate a random session id
@@ -143,13 +149,12 @@ pub mod structured_logging {
     }
 
     #[tauri::command]
-    pub async fn get_filtered_data_for_structured_logging_session(session_id: String, search_query: String, offset: u32, limit: u32) -> FilteredLogResult {
+    pub async fn get_filtered_data_for_structured_logging_session(session_id: String, search_query: String, offset: u32, limit: u32, sorting: Vec<SortingState>) -> FilteredLogResult {
         if let Some(session) = STRUCTURED_LOGGING_SESSIONS.lock().unwrap().as_mut().unwrap().get_mut(&session_id) {
             let mut filtered_data = Vec::new();
-            let mut filtered_data_count = 0;
             let mut any_filtered = false;
             let mut facet_matches: Vec<HashMap<String, HashSet<usize>>> = Vec::new();
-        
+
             // Collect all matching rows for each filtered facet value
             for facet in session.facets.iter() {
                 let mut facet_matched_indices: HashSet<usize> = HashSet::new();
@@ -175,7 +180,7 @@ pub mod structured_logging {
             let mut matched_indices = HashSet::new();
 
             if !facet_matches.is_empty() {
-                // mathced indices based on AND or OR
+                // matched indices based on AND or OR
                 matched_indices = facet_matches[0].iter().map(|(_, indices)| indices.clone()).flatten().collect();
                 for (property, indices) in facet_matches.iter().skip(1).flat_map(|m| m.iter()) {
                     // get matchtype for property
@@ -190,7 +195,7 @@ pub mod structured_logging {
                     }
                 }
             }
-        
+
             // Collect the filtered data based on matched indices if any filters are applied
             if any_filtered {
                 // Apply search query if any and filter the matched indices
@@ -217,13 +222,7 @@ pub mod structured_logging {
                 }
 
                 for index in matched_indices.iter() {
-                    if filtered_data_count >= offset {
-                        filtered_data.push(session.data[*index].clone());
-                    }
-                    filtered_data_count += 1;
-                    if filtered_data_count >= offset + limit {
-                        break;
-                    }
+                    filtered_data.push(session.data[*index].clone());
                 }
             } else {
                 // if any search query, apply query and then return data within offset and limit, otherwise return all data within offset and limit
@@ -237,10 +236,7 @@ pub mod structured_logging {
                         for value in data.as_object().unwrap().values() {
                             if value.is_string() {
                                 if value.as_str().unwrap().to_lowercase().contains(&search_query) {
-                                    if filtered_data_count >= offset {
-                                        filtered_data.push(data.clone());
-                                    }
-                                    filtered_data_count += 1;
+                                    filtered_data.push(data.clone());
                                     break;
                                 }
                             }
@@ -248,35 +244,29 @@ pub mod structured_logging {
                             if value.is_object() {
                                 let serialized_value = serde_json::to_string(value).unwrap();
                                 if serialized_value.to_lowercase().contains(&search_query) {
-                                    if filtered_data_count >= offset {
-                                        filtered_data.push(data.clone());
-                                    }
-                                    filtered_data_count += 1;
+                                    filtered_data.push(data.clone());
                                     break;
                                 }
                             }
                         }
-                        if filtered_data_count >= offset + limit {
-                            break;
-                        }
                     }
                 } else {
                     for (_index, data) in session.data.iter().enumerate() {
-                        if filtered_data_count >= offset {
-                            filtered_data.push(data.clone());
-                        }
-                        filtered_data_count += 1;
-                        if filtered_data_count >= offset + limit {
-                            break;
-                        }
+                        filtered_data.push(data.clone());
                     }
                 }
             }
 
+            // Apply sorting
+            let sorted_data = apply_sorting(filtered_data, &sorting);
+
+            let total_count = session.data.len() as u32;
+            let (limited_data, limited_data_count) = apply_offset_and_limit(sorted_data, offset, limit);
+
             return FilteredLogResult {
-                data: filtered_data,
-                filtered_total: filtered_data_count,
-                total: session.data.len() as u32,
+                data: limited_data,
+                filtered_total: limited_data_count,
+                total: total_count,
             };
         }
 
@@ -285,6 +275,64 @@ pub mod structured_logging {
             filtered_total: 0,
             total: 0,
         };
+    }
+
+    fn apply_sorting(mut data: Vec<serde_json::Value>, sorting: &[SortingState]) -> Vec<serde_json::Value> {
+        data.sort_by(|a, b| {
+            for sort in sorting.iter() {
+                let key = &sort.id;
+                let desc = sort.desc;
+                let value_a = a.get(key);
+                let value_b = b.get(key);
+    
+                if value_a.is_none() || value_b.is_none() {
+                    continue;
+                }
+    
+                let order = match (value_a, value_b) {
+                    (Some(va), Some(vb)) if va.is_string() && vb.is_string() => {
+                        let va = va.as_str().unwrap();
+                        let vb = vb.as_str().unwrap();
+                        if desc {
+                            vb.cmp(&va)
+                        } else {
+                            va.cmp(&vb)
+                        }
+                    },
+                    (Some(va), Some(vb)) if va.is_number() && vb.is_number() => {
+                        let va = va.as_f64().unwrap();
+                        let vb = vb.as_f64().unwrap();
+                        if desc {
+                            vb.partial_cmp(&va).unwrap()
+                        } else {
+                            va.partial_cmp(&vb).unwrap()
+                        }
+                    },
+                    _ => continue,
+                };
+    
+                if order != std::cmp::Ordering::Equal {
+                    return order;
+                }
+            }
+            std::cmp::Ordering::Equal
+        });
+        data
+    }
+
+    fn apply_offset_and_limit(data: Vec<serde_json::Value>, offset: u32, limit: u32) -> (Vec<serde_json::Value>, u32) {
+        let offset = offset as usize;
+        let limit = limit as usize;
+        let data_count = data.len() as u32;
+
+        if offset >= data.len() {
+            return (Vec::new(), 0);
+        }
+
+        let end = std::cmp::min(offset + limit, data.len());
+        let limited_data = data[offset..end].to_vec();
+
+        (limited_data, data_count)
     }
 
     fn update_unique_facet_values_for_logging_session(session_id: String) {

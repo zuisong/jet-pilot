@@ -1,7 +1,12 @@
 <script setup lang="ts" generic="TData, TValue">
 import type { ColumnDef } from "@tanstack/vue-table";
 import { UnwrapRef } from "vue";
-import { FlexRender, getCoreRowModel, useVueTable } from "@tanstack/vue-table";
+import {
+  FlexRender,
+  getCoreRowModel,
+  useVueTable,
+  SortingState,
+} from "@tanstack/vue-table";
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -12,6 +17,8 @@ import {
   ContextMenuSubTrigger,
   ContextMenuSubContent,
 } from "@/components/ui/context-menu";
+import SortAscendingIcon from "@/assets/icons/sort_asc.svg";
+import SortDescendingIcon from "@/assets/icons/sort_desc.svg";
 
 import {
   Table,
@@ -27,6 +34,7 @@ interface DataTableState<T> {
   contextMenuSubject: T | null;
 }
 
+const sorting = ref<SortingState>([]);
 const state = reactive<DataTableState<TData>>({
   contextMenuSubject: null,
 });
@@ -49,6 +57,8 @@ const props = defineProps<{
   scrollOffset: number;
 }>();
 
+const emit = defineEmits(["sortingChange"]);
+
 const table = useVueTable({
   get data() {
     return props.data;
@@ -60,6 +70,17 @@ const table = useVueTable({
     columnVisibility: props.visibleColumns,
   },
   getCoreRowModel: getCoreRowModel(),
+  manualSorting: true,
+  state: {
+    get sorting() {
+      return sorting.value;
+    },
+  },
+  onSortingChange: (newSorting) => {
+    sorting.value =
+      typeof newSorting === "function" ? newSorting(sorting.value) : newSorting;
+    emit("sortingChange", sorting.value);
+  },
 });
 </script>
 
@@ -82,12 +103,26 @@ const table = useVueTable({
                 :key="header.id"
                 :style="{ width: `${header.getSize()}px` }"
                 :sticky="stickyHeaders === true"
+                :class="
+                  header.column.getCanSort() ? 'cursor-pointer select-none' : ''
+                "
+                @click="header.column.getToggleSortingHandler()?.($event)"
               >
-                <FlexRender
-                  v-if="!header.isPlaceholder"
-                  :render="header.column.columnDef.header"
-                  :props="header.getContext()"
-                />
+                <div class="flex justify-between items-center">
+                  <FlexRender
+                    v-if="!header.isPlaceholder"
+                    :render="header.column.columnDef.header"
+                    :props="header.getContext()"
+                  />
+                  <div class="ml-2">
+                    <span v-if="header.column.getIsSorted() === 'asc'">
+                      <SortAscendingIcon class="w-4 h-4" />
+                    </span>
+                    <span v-else-if="header.column.getIsSorted() === 'desc'">
+                      <SortDescendingIcon class="w-4 h-4" />
+                    </span>
+                  </div>
+                </div>
               </TableHead>
             </TableRow>
           </TableHeader>
