@@ -135,6 +135,7 @@ pub mod client {
             let client_config = Config::from_kubeconfig(&options)
                 .await
                 .map_err(|err| SerializableKubeError::from(err))?;
+
             let client =
                 Client::try_from(client_config).map_err(|err| SerializableKubeError::from(err))?;
 

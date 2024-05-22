@@ -23,7 +23,7 @@ pub mod structured_logging {
     pub struct Facet {
         property: String,
         // matchType should be enum for AND or OR
-        matchType: MatchType,
+        match_type: MatchType,
         values: Vec<FacetValue>,
     }
 
@@ -52,7 +52,6 @@ pub mod structured_logging {
         // generate a random session id
         let session_id = Uuid::new_v4().to_string();
         
-
         if STRUCTURED_LOGGING_SESSIONS.lock().unwrap().is_none() {
             *STRUCTURED_LOGGING_SESSIONS.lock().unwrap() = Some(HashMap::new());
         }
@@ -71,9 +70,16 @@ pub mod structured_logging {
     }
 
     #[tauri::command]
+    pub async fn end_structured_logging_session(session_id: String) {
+        STRUCTURED_LOGGING_SESSIONS.lock().unwrap().as_mut().unwrap().remove(&session_id);
+    }
+
+    #[tauri::command]
     pub async fn add_data_to_structured_logging_session(session_id: String, data: Vec<String>) {
         if let Some(session) = STRUCTURED_LOGGING_SESSIONS.lock().unwrap().as_mut().unwrap().get_mut(&session_id) {
-            session.data.extend(data.into_iter().map(|d| serde_json::Value::String(d)));
+            session.data.extend(data.into_iter().map(|d|
+                serde_json::from_str(&d).unwrap_or_else(|_| serde_json::Value::String(d))
+            ));
         }
 
         update_unique_facet_values_for_logging_session(session_id);
@@ -89,7 +95,7 @@ pub mod structured_logging {
             };
             session.facets.push(Facet {
                 property,
-                matchType: match_type,
+                match_type: match_type,
                 values: Vec::new(),
             });
         }
@@ -102,7 +108,7 @@ pub mod structured_logging {
         if let Some(session) = STRUCTURED_LOGGING_SESSIONS.lock().unwrap().as_mut().unwrap().get_mut(&session_id) {
             for facet in session.facets.iter_mut() {
                 if facet.property == property {
-                    facet.matchType = match match_type.as_str() {
+                    facet.match_type = match match_type.as_str() {
                         "AND" => MatchType::AND,
                         "OR" => MatchType::OR,
                         _ => MatchType::OR,
@@ -185,7 +191,7 @@ pub mod structured_logging {
                 for (property, indices) in facet_matches.iter().skip(1).flat_map(|m| m.iter()) {
                     // get matchtype for property
                     let facet = session.facets.iter().find(|f| f.property == *property).unwrap();
-                    match facet.matchType {
+                    match facet.match_type {
                         MatchType::OR => {
                             matched_indices = matched_indices.union(indices).cloned().collect();
                         }

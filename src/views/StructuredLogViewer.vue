@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { BaseDirectory, readTextFile } from "@tauri-apps/api/fs";
 import { invoke } from "@tauri-apps/api/tauri";
+import { Child, Command } from "@tauri-apps/api/shell";
 import DataTable from "@/components/ui/UnmanagedVirtualDataTable.vue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,9 +24,82 @@ const sortingState = ref<any[]>([]);
 const searchQuery = ref<string>("");
 const tableScrollContainer = ref<HTMLDivElement | null>(null);
 const scrollState = useScroll(tableScrollContainer);
+let logProcess: Child | null = null;
 
 const dataLength = ref(0);
 const logData = ref<any[]>([]);
+
+const props = defineProps<{
+  context: string;
+  namespace: string;
+  object: string;
+}>();
+
+const initCommand = computed(() => {
+  const initCommandArgs = [
+    "logs",
+    "--context",
+    props.context,
+    "--namespace",
+    props.namespace,
+  ];
+
+  // if (logsSince.value !== "tail" && logsSince.value !== "head") {
+  //   initCommandArgs.push("--since=" + logsSince.value);
+  // }
+
+  // if (logsSince.value === "tail") {
+  //   initCommandArgs.push("--tail=100");
+  // }
+
+  initCommandArgs.push("--follow");
+
+  initCommandArgs.push(props.object);
+
+  return initCommandArgs;
+});
+
+const initLogOutput = async () => {
+  killProcess();
+
+  sessionId.value = await invoke("start_structured_logging_session", {
+    initialData: [],
+  });
+
+  const command = new Command("kubectl", initCommand.value);
+
+  command.stdout.on("data", async (data) => {
+    if (data === "") {
+      return;
+    }
+
+    await invoke("add_data_to_structured_logging_session", {
+      sessionId: sessionId.value,
+      data: [JSON.stringify({ message: data })],
+    });
+
+    fetchVirtualPageDebounced();
+  });
+
+  command.stderr.on("data", (data) => {});
+
+  const child = await command.spawn();
+  logProcess = child;
+};
+
+const killProcess = async () => {
+  if (logProcess) {
+    logProcess.kill();
+  }
+
+  if (!sessionId.value) {
+    return;
+  }
+
+  await invoke("end_structured_logging_session", {
+    sessionId: sessionId.value,
+  });
+};
 
 const generateColumns = () => {
   if (typeof logData.value[0] === "object") {
@@ -89,8 +163,14 @@ const setFacetMatchType = async (facet: string, matchType: "AND" | "OR") => {
   fetchVirtualPage();
 };
 
-const removeFacet = (facet: string) => {
-  facets.value = facets.value.filter((f) => f !== facet);
+const removeFacet = async (facet: string) => {
+  await invoke("remove_facet_from_structured_logging_session", {
+    sessionId: sessionId.value,
+    property: facet,
+  });
+
+  await updateFacetValues();
+  fetchVirtualPage();
 };
 
 const setFilteredForFacetValue = async (
@@ -130,7 +210,7 @@ watch(
   useDebounceFn(async () => {
     scrollState.y.value = 0;
     await fetchVirtualPage();
-  }, 100)
+  }, 250)
 );
 
 const updateSorting = async (sorting: []) => {
@@ -144,7 +224,7 @@ const fetchVirtualPage = async () => {
     return;
   }
 
-  const rowHeight = 31;
+  const rowHeight = 33;
 
   const offset = Math.max(Math.floor(scrollState.y.value / rowHeight) - 250, 0);
   const limit = 200;
@@ -160,22 +240,34 @@ const fetchVirtualPage = async () => {
     }
   );
 
+  console.log(results);
+
   logData.value = results.data;
   dataLength.value = results.total;
+
+  console.log(offset, limit, results.total);
 };
 
+const fetchVirtualPageDebounced = useDebounceFn(() => {
+  fetchVirtualPage();
+}, 25);
+
 onMounted(async () => {
-  const data = (
-    await readTextFile("raw-logs.txt", {
-      dir: BaseDirectory.AppConfig,
-    })
-  ).split("\n");
+  // const data = (
+  //   await readTextFile("raw-logs.txt", {
+  //     dir: BaseDirectory.AppConfig,
+  //   })
+  // ).split("\n");
+  // sessionId.value = await invoke("start_structured_logging_session", {
+  //   initialData: data,
+  // });
+  // await fetchVirtualPage();
 
-  sessionId.value = await invoke("start_structured_logging_session", {
-    initialData: data,
-  });
+  initLogOutput();
+});
 
-  await fetchVirtualPage();
+onUnmounted(() => {
+  killProcess();
 });
 </script>
 <template>
@@ -196,9 +288,9 @@ onMounted(async () => {
             <DropdownMenuCheckboxItem
               v-for="column in columns"
               :key="column"
-              :checked="facets.includes(column)"
+              :checked="facets.find((f) => f.property === column) !== undefined"
               @click="
-                !facets.includes(column)
+                !facets.find((f) => f.property === column)
                   ? addFacet(column, 'OR')
                   : removeFacet(column)
               "
@@ -286,7 +378,7 @@ onMounted(async () => {
           :data="logData"
           :row-classes="() => 'font-mono text-xs'"
           :data-length="dataLength"
-          :estimated-row-height="31"
+          :estimated-row-height="33"
           :scroll-offset="tableScrollContainer?.scrollTop || 0"
           @sorting-change="updateSorting"
           sticky-headers

@@ -81,6 +81,7 @@ fn main() {
             shell::tty::stop_tty_session,
             shell::tty::write_to_pty,
             logs::structured_logging::start_structured_logging_session,
+            logs::structured_logging::end_structured_logging_session,
             logs::structured_logging::add_data_to_structured_logging_session,
             logs::structured_logging::add_facet_to_structured_logging_session,
             logs::structured_logging::set_facet_match_type_for_structured_logging_session,
