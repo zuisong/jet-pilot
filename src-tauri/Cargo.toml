@@ -24,6 +24,7 @@ portable-pty = "0.8.1"
 uuid = "1.4.1"
 either = "1.9.0"
 k8s-metrics = "0.14.0"
+access_log_parser = { version = "0.8.0", path = "src/crates/access_log_parser" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel" }
