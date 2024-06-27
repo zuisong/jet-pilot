@@ -26,9 +26,6 @@ export interface SettingsContextState {
     shell: {
       executable: string;
     };
-    structuredLogViewer: {
-      enabled: boolean;
-    };
     contextSettings: ContextSettings[];
     collapsedNavigationGroups: string[];
     appearance: {
@@ -51,9 +48,6 @@ export default {
         lastNamespace: null,
         tabProvider: {
           height: 50,
-        },
-        structuredLogViewer: {
-          enabled: false,
         },
         shell: {
           executable: "/bin/sh",

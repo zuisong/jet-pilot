@@ -7,11 +7,7 @@ import {
   useVueTable,
   SortingState,
 } from "@tanstack/vue-table";
-import {
-  useVirtualizer,
-  Virtualizer,
-  VirtualizerOptions,
-} from "@tanstack/vue-virtual";
+import { useVirtualizer } from "@tanstack/vue-virtual";
 import {
   ContextMenu,
   ContextMenuTrigger,

@@ -18,6 +18,7 @@ pub mod structured_logging {
 
     #[derive(Clone, Debug, serde::Serialize)]
     pub struct StructuredLogEntry {
+        id: Uuid,
         content: String,
         timestamp: String,
         data: serde_json::Value,
@@ -68,11 +69,12 @@ pub mod structured_logging {
             StructuredLoggingSession {
                 entries: initial_data.into_iter().map(|d|
                     StructuredLogEntry {
+                        id: Uuid::new_v4(),
                         content: d.clone(),
                         timestamp: d.splitn(2, ' ').next().unwrap_or("").to_string(),
                         data: serde_json::from_str(
                             d.splitn(2, ' ').nth(1).unwrap_or("")
-                        ).unwrap_or_else(|_| serde_json::Value::String(d))
+                        ).unwrap_or_else(|_| serde_json::Value::String(d)),
                     }
                 ).collect(),
                 columns: Vec::new(),
@@ -159,6 +161,7 @@ pub mod structured_logging {
                     ExtractedContent::Json(json) => {
                         update_columns_for_logging_session(session_id.clone(), &json);
                         Some(StructuredLogEntry {
+                            id: Uuid::new_v4(),
                             content: data.to_string(),
                             timestamp: timestamp.to_string(),
                             data: json,
@@ -167,9 +170,10 @@ pub mod structured_logging {
                     ExtractedContent::Text(text) => {
                         let log_record = parse_log_record(session_id.clone(), &text);
                         Some(StructuredLogEntry {
+                            id: Uuid::new_v4(),
                             content: data.to_string(),
                             timestamp: timestamp.to_string(),
-                            data: log_record
+                            data: log_record,
                         })
                     }
                 }

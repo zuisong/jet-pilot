@@ -65,30 +65,5 @@ const { settings } = injectStrict(SettingsContextStateKey);
         </FormItem>
       </FormField>
     </div>
-    <div>
-      <h2 class="font-medium text-base mb-4">Structured Log Viewer</h2>
-      <FormField
-        v-slot="{ componentField }"
-        v-model="settings.structuredLogViewer.enabled"
-        name="structured-log-viewer-enabled"
-      >
-        <FormItem>
-          <div class="flex flex-row items-center space-x-2 mb-5">
-            <Checkbox
-              id="structured-log-viewer-enabled"
-              :checked="settings.structuredLogViewer.enabled"
-              v-bind="componentField"
-              @update:checked="settings.structuredLogViewer.enabled = $event"
-            />
-            <label
-              for="structured-log-viewer-enabled"
-              class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-            >
-              Enabled
-            </label>
-          </div>
-        </FormItem>
-      </FormField>
-    </div>
   </div>
 </template>

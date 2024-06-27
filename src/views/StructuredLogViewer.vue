@@ -4,13 +4,8 @@ import { Child, Command } from "@tauri-apps/api/shell";
 import DataTable from "@/components/ui/VirtualDataTable.vue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import PlusIcon from "@/assets/icons/plus.svg";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuCheckboxItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { h } from "vue";
+import ArrowDownIcon from "@/assets/icons/arrow_down_xl.svg";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useDebounceFn } from "@vueuse/core";
 import { formatSnakeCaseToHumanReadable } from "@/lib/utils";
@@ -100,6 +95,17 @@ const killProcess = async () => {
 
 const datatableColumns = computed(() => {
   return [
+    // {
+    //   id: "marked",
+    //   cell: ({ row }) => {
+    //     return h(Checkbox, {
+    //       checked: row.marked,
+    //       onChange: (value: boolean) => {
+    //         row.marked = value;
+    //       },
+    //     });
+    //   },
+    // },
     {
       accessorKey: "timestamp",
       header: "Timestamp",
@@ -170,6 +176,10 @@ const updateColumns = async () => {
   });
 };
 
+const getFacetForColumn = (column: string) => {
+  return facets.value.find((f) => f.property === column);
+};
+
 watch(
   () => searchQuery.value,
   useDebounceFn(async () => {
@@ -234,82 +244,58 @@ onUnmounted(() => {
   <div class="absolute left-0 top-0 flex flex-row w-full h-full border-t">
     <div
       v-if="columns.length > 0"
-      class="overflow-y-auto h-full min-w-[250px] max-w-[250px] border-r p-2 space-y-4"
+      class="overflow-y-auto h-full min-w-[300px] max-w-[300px] border-r p-2 space-y-4"
     >
-      <div class="flex justify-between items-center">
-        <span class="font-bold">Filters</span>
-        <DropdownMenu>
-          <DropdownMenuTrigger>
-            <Button variant="outline" size="icon">
-              <PlusIcon class="h-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuCheckboxItem
-              v-for="column in columns"
-              :key="column"
-              :checked="facets.find((f) => f.property === column) !== undefined"
-              @click="
-                !facets.find((f) => f.property === column)
-                  ? addFacet(column, 'OR')
-                  : removeFacet(column)
-              "
-              >{{
-                formatSnakeCaseToHumanReadable(column)
-              }}</DropdownMenuCheckboxItem
-            >
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-      <div v-for="facet in facets" :key="facet.property">
-        <div class="flex justify-between items-center mb-4">
-          <div class="font-bold">
-            {{ formatSnakeCaseToHumanReadable(facet.property) }}
-          </div>
-          <div
-            v-if="facets.length > 1"
-            class="flex items-center text-xxs space-x-1 bg-secondary p-1 rounded-full"
-          >
-            <span
-              class="rounded-full px-1 py-0.5 cursor-pointer leading-none"
-              :class="{
-                'text-background bg-foreground': facet.match_type == 'OR',
-              }"
-              @click="setFacetMatchType(facet.property, 'OR')"
-              >OR</span
-            >
-            <span
-              class="rounded-full px-1 py-0.5 cursor-pointer leading-none"
-              :class="{
-                'text-background bg-foreground': facet.match_type == 'AND',
-              }"
-              @click="setFacetMatchType(facet.property, 'AND')"
-              >AND</span
-            >
+      <span class="font-bold">Filters</span>
+      <div v-for="column in columns" :key="column">
+        <div
+          class="flex items-center mb-3 cursor-pointer"
+          :class="{
+            'text-foreground dark:text-white': facets.find(
+              (f) => f.property === column
+            ),
+            'text-muted-foreground': !facets.find((f) => f.property === column),
+          }"
+          @click="
+            !facets.find((f) => f.property === column)
+              ? addFacet(column, 'OR')
+              : removeFacet(column)
+          "
+        >
+          <ArrowDownIcon
+            class="h-5 mx-2"
+            :class="{
+              '-rotate-90':
+                facets.find((f) => f.property === column) === undefined,
+            }"
+          />
+          <div class="font-medium">
+            {{ formatSnakeCaseToHumanReadable(column) }}
           </div>
         </div>
-        <ul class="border rounded-lg">
+        <ul
+          class="border rounded-lg overflow-hidden"
+          v-if="facets.find((f) => f.property === column) !== undefined"
+        >
           <li
-            v-for="value in facet.values.sort((a, b) => b.total - a.total)"
+            v-for="value in getFacetForColumn(column).values.sort(
+              (a, b) => b.total - a.total
+            )"
             :key="value.value"
-            class="flex items-center justify-between p-3 border-b last:border-b-0"
+            class="flex items-center justify-between p-3 border-b cursor-pointer hover:bg-gray-100/25 dark:hover:bg-gray-100/5 last:border-b-0"
             :title="value.value"
+            @click="
+              setFilteredForFacetValue(column, value.value, !value.filtered)
+            "
           >
             <label
-              :for="`facet-${facet.property}-${value.value}`"
+              :for="`facet-${column}-${value.value}`"
               class="flex truncate space-x-2 cursor-pointer"
             >
               <Checkbox
-                :id="`facet-${facet.property}-${value.value}`"
+                :id="`facet-${column}-${value.value}`"
                 class="border-secondary"
                 :checked="value.filtered"
-                @update:checked="
-                  setFilteredForFacetValue(
-                    facet.property,
-                    value.value,
-                    !value.filtered
-                  )
-                "
               />
               <span class="text-xs truncate">{{ value.value }}</span>
             </label>
@@ -356,7 +342,7 @@ onUnmounted(() => {
         :columns="datatableColumns"
         :data="logData"
         :row-classes="() => 'font-mono text-xs'"
-        :estimated-row-height="37"
+        :estimated-row-height="33"
         :auto-scroll="autoScroll"
         sticky-headers
         @sorting-change="updateSorting"
